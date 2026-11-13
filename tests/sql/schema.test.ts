@@ -39,6 +39,7 @@ beforeAll(async () => {
   db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(readFileSync('tests/sql/auth-stub.sql', 'utf8'));
   await db.exec(readFileSync('supabase/migrations/001_init.sql', 'utf8'));
+  await db.exec(readFileSync('supabase/migrations/002_roles_admin.sql', 'utf8'));
   await db.exec(`insert into auth.users values ('${EDITOR}'), ('${VIEWER}'), ('${STRANGER}');
                  insert into public.authorized_users values ('${EDITOR}', 'editor'), ('${VIEWER}', 'viewer');`);
 });
@@ -146,5 +147,56 @@ describe('apply_import', () => {
     const ax = await as(VIEWER, () => db.query(`select shipping_line, type, grade, size, condition from public.containers where container_no='AXIU1498450'`));
     expect(ax.rows.length).toBe(1);
     console.log(`full import in PGlite: ${ms} ms; AXIU1498450 =`, ax.rows[0]);
+  });
+});
+
+describe('002: admin / viewer roles', () => {
+  const ADMIN = '44444444-4444-4444-4444-444444444444';
+  const NEWBIE = '55555555-5555-5555-5555-555555555555';
+  beforeAll(async () => {
+    await db.exec(`insert into auth.users (id, email) values ('${ADMIN}', 'ega@sbs.test'), ('${NEWBIE}', 'new@sbs.test');
+                   insert into public.authorized_users (user_id, role) values ('${ADMIN}', 'admin');`);
+  });
+
+  it('migration 002 is re-runnable', async () => {
+    await db.exec(readFileSync('supabase/migrations/002_roles_admin.sql', 'utf8'));
+  });
+
+  it('new rows default to viewer (least privilege)', async () => {
+    const r = await db.query<{ d: string }>(`select column_default d from information_schema.columns where table_name='authorized_users' and column_name='role'`);
+    expect(r.rows[0].d).toMatch(/viewer/);
+  });
+
+  it('admin lists users, pending sign-ups first', async () => {
+    const r = await as(ADMIN, () => db.query<{ user_id: string; role: string | null }>('select * from public.admin_list_users()'));
+    expect(r.rows.length).toBeGreaterThanOrEqual(5);
+    expect(r.rows[0].role).toBeNull();
+    expect(r.rows.find((u) => u.user_id === NEWBIE)?.role).toBeNull();
+  });
+
+  it('viewers, editors and strangers cannot list or grant', async () => {
+    for (const uid of [VIEWER, EDITOR, STRANGER, NEWBIE]) {
+      await expect(as(uid, () => db.query('select * from public.admin_list_users()'))).rejects.toThrow(/Admins only/);
+      await expect(as(uid, () => db.query(`select public.admin_set_role('${NEWBIE}', 'admin')`))).rejects.toThrow(/Admins only/);
+    }
+  });
+
+  it('admin approves → viewer can read but not write; admin revokes → reads nothing', async () => {
+    await as(ADMIN, () => db.query(`select public.admin_set_role('${NEWBIE}', 'viewer')`));
+    const g = await db.query<{ role: string; granted_by: string }>(`select role, granted_by from public.authorized_users where user_id='${NEWBIE}'`);
+    expect(g.rows[0]).toEqual({ role: 'viewer', granted_by: ADMIN });
+    expect((await as(NEWBIE, () => db.query('select * from public.containers'))).rows.length).toBeGreaterThan(0);
+    await expect(as(NEWBIE, () => importRows([row('NEWU0000009')], 'merge'))).rejects.toThrow(/Not authorized/);
+    await as(ADMIN, () => db.query(`select public.admin_set_role('${NEWBIE}', null)`));
+    expect((await as(NEWBIE, () => db.query('select * from public.containers'))).rows.length).toBe(0);
+  });
+
+  it('admin can import (admin ⊇ editor)', async () => {
+    await expect(as(ADMIN, () => importRows([row('ADMU0000001')], 'merge'))).resolves.toMatchObject({ added: 1 });
+  });
+
+  it('admin cannot change their own role (no self-lockout) and rejects bad roles', async () => {
+    await expect(as(ADMIN, () => db.query(`select public.admin_set_role('${ADMIN}', 'viewer')`))).rejects.toThrow(/own access/);
+    await expect(as(ADMIN, () => db.query(`select public.admin_set_role('${NEWBIE}', 'superuser')`))).rejects.toThrow(/Invalid role/);
   });
 });

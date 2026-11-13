@@ -129,7 +129,7 @@ export function SearchScreen({ onOpenSettings }: { onOpenSettings: () => void })
 
       <div className="px-4 mt-4 space-y-4">
         {outcome.kind === 'found' && (
-          <ResultCard record={outcome.record} asOf={asOf} stale={stale} via={outcome.via} onEdit={() => setEditing(outcome.record)} />
+          <ResultCard record={outcome.record} asOf={asOf} stale={stale} via={outcome.via} onEdit={store.canEdit() ? () => setEditing(outcome.record) : undefined} />
         )}
 
         {outcome.kind === 'not-found' && (

@@ -114,3 +114,24 @@ export class SupabaseBackend implements RemoteBackend {
     return (data ?? []) as ImportBatch[];
   }
 }
+
+// ---------- Admin: user access management (migration 002) ----------
+export type AccessRole = 'viewer' | 'editor' | 'admin';
+export interface AppUser {
+  user_id: string;
+  email: string;
+  role: AccessRole | null; // null = signed up, waiting for approval
+  signed_up_at: string;
+  last_sign_in_at: string | null;
+}
+
+export async function adminListUsers(): Promise<AppUser[]> {
+  const { data, error } = await getSupabase()!.rpc('admin_list_users');
+  fail(error, 'Could not load users');
+  return (data ?? []) as AppUser[];
+}
+
+export async function adminSetRole(userId: string, role: AccessRole | null): Promise<void> {
+  const { error } = await getSupabase()!.rpc('admin_set_role', { p_user: userId, p_role: role });
+  fail(error, 'Could not change access');
+}

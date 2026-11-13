@@ -3,7 +3,7 @@ import { Search, Boxes, Upload, BarChart3, Settings, Loader2 } from 'lucide-reac
 import type { Session } from '@supabase/supabase-js';
 import { StoreProvider, getStore, useStoreState } from './state/StoreContext';
 import { ToastProvider, useTheme } from './state/ui';
-import { getSupabase, isCloudConfigured } from './data/supabase';
+import { getSupabase, isCloudConfigured, type AccessRole } from './data/supabase';
 import { SearchScreen } from './screens/SearchScreen';
 import { InventoryScreen } from './screens/InventoryScreen';
 const ImportScreen = lazy(() => import('./screens/ImportScreen').then((m) => ({ default: m.ImportScreen })));
@@ -43,6 +43,12 @@ function useHashTab(): [TabId, (t: TabId) => void] {
 function Shell({ userEmail, onSignOut }: { userEmail: string | null; onSignOut?: () => Promise<void> }) {
   const [tab, go] = useHashTab();
   const state = useStoreState();
+  // Viewers never see Import (server RLS blocks it anyway; this keeps the UI honest).
+  const readOnly = state.mode === 'cloud' && state.role !== 'admin' && state.role !== 'editor';
+  const tabs = TABS.filter((t) => !(readOnly && t.id === 'import'));
+  useEffect(() => {
+    if (readOnly && tab === 'import') go('search');
+  }, [readOnly, tab, go]);
   if (!state.ready)
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -55,14 +61,14 @@ function Shell({ userEmail, onSignOut }: { userEmail: string | null; onSignOut?:
         <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin text-brand-600" size={28} /></div>}>
         {tab === 'search' && <SearchScreen onOpenSettings={() => go('settings')} />}
         {tab === 'inventory' && <InventoryScreen />}
-        {tab === 'import' && <ImportScreen />}
+        {tab === 'import' && !readOnly && <ImportScreen />}
         {tab === 'dashboard' && <DashboardScreen />}
         {tab === 'settings' && <SettingsScreen userEmail={userEmail} onSignOut={onSignOut} />}
         </Suspense>
       </main>
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
-        <div className="max-w-xl mx-auto grid grid-cols-5">
-          {TABS.map(({ id, label, Icon }) => (
+        <div className={`max-w-xl mx-auto grid ${tabs.length === 5 ? 'grid-cols-5' : 'grid-cols-4'}`}>
+          {tabs.map(({ id, label, Icon }) => (
             <button
               key={id}
               onClick={() => go(id)}
@@ -83,6 +89,7 @@ function Shell({ userEmail, onSignOut }: { userEmail: string | null; onSignOut?:
 }
 
 const AUTH_FLAG = 'cst.authorized';
+const ROLE_FLAG = 'cst.role';
 
 /** Cloud mode: requires sign-in + membership in authorized_users. Works offline with a cached session. */
 function CloudGate() {
@@ -99,16 +106,24 @@ function CloudGate() {
   useEffect(() => {
     if (!session) return;
     const uid = session.user.id;
-    if (!navigator.onLine && localStorage.getItem(AUTH_FLAG) === uid) return setAuthz('ok');
+    const cachedOk = () => {
+      if (localStorage.getItem(AUTH_FLAG) !== uid) return false;
+      getStore().setRole((localStorage.getItem(ROLE_FLAG) as AccessRole | null) ?? 'viewer');
+      setAuthz('ok');
+      return true;
+    };
+    if (!navigator.onLine && cachedOk()) return;
     void sb
       .from('authorized_users')
       .select('role')
       .eq('user_id', uid)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (error && localStorage.getItem(AUTH_FLAG) === uid) return setAuthz('ok'); // network hiccup: trust last check
+        if (error && cachedOk()) return; // network hiccup: trust last check
         if (data) {
           localStorage.setItem(AUTH_FLAG, uid);
+          localStorage.setItem(ROLE_FLAG, data.role);
+          getStore().setRole(data.role as AccessRole);
           setAuthz('ok');
         } else setAuthz('denied');
       });
@@ -117,6 +132,8 @@ function CloudGate() {
   const signOut = async () => {
     await getStore().clearLocal();
     localStorage.removeItem(AUTH_FLAG);
+    localStorage.removeItem(ROLE_FLAG);
+    getStore().setRole(null);
     await sb.auth.signOut();
   };
 
@@ -131,7 +148,8 @@ function CloudGate() {
   if (authz === 'denied')
     return (
       <LoginScreen
-        notice={`Signed in as ${session.user.email}, but this account is not authorized.\nAsk the administrator to add user id:\n${session.user.id}\nto the authorized_users table.`}
+        notice={`Signed in as ${session.user.email}.\nYour access request is waiting for admin approval. Reopen the app once you've been approved.`}
+        onSignOut={signOut}
       />
     );
   return (

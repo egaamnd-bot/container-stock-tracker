@@ -7,6 +7,7 @@ import { useTheme, useToast, type Theme } from '../state/ui';
 import { Button, Card, PageHeader, SyncBadge } from '../components/ui';
 import type { ImportBatch } from '../lib/types';
 import { useInstallPrompt } from '../state/install';
+import { UsersAdmin } from '../components/UsersAdmin';
 
 export function SettingsScreen({ userEmail, onSignOut }: { userEmail: string | null; onSignOut?: () => Promise<void> }) {
   const store = useStore();
@@ -49,6 +50,7 @@ export function SettingsScreen({ userEmail, onSignOut }: { userEmail: string | n
             <Row label="Mode">{state.mode === 'cloud' ? 'Supabase (shared)' : 'Local only (this device)'}</Row>
             <Row label="Status"><SyncBadge state={state.sync} /></Row>
             {userEmail && <Row label="Signed in as">{userEmail}</Row>}
+            {state.mode === 'cloud' && <Row label="Access"><span className="capitalize">{state.role ?? '—'}</span></Row>}
             <Row label="Network">{state.online ? 'Online' : 'Offline'}</Row>
             <Row label={state.mode === 'cloud' ? 'Last synchronization' : 'Last import'}>
               {state.mode === 'cloud' ? `${formatDateTime(state.lastSyncAt)} (${timeAgo(state.lastSyncAt)})` : formatDateTime(state.lastImport?.created_at)}
@@ -68,6 +70,8 @@ export function SettingsScreen({ userEmail, onSignOut }: { userEmail: string | n
             </Button>
           )}
         </Card>
+
+        {state.mode === 'cloud' && state.role === 'admin' && state.online && <UsersAdmin selfEmail={userEmail} />}
 
         <Card className="p-4">
           <h2 className="font-semibold flex items-center gap-2 mb-3"><Download size={18} /> Backup / export</h2>

@@ -158,7 +158,7 @@ export function InventoryScreen() {
             record={viewing}
             asOf={state.mode === 'cloud' ? state.lastSyncAt : state.lastImport?.created_at ?? null}
             stale={state.mode === 'cloud' && state.sync !== 'synced'}
-            onEdit={() => { setEditing(viewing); setViewing(null); }}
+            onEdit={store.canEdit() ? () => { setEditing(viewing); setViewing(null); } : undefined}
           />
         )}
       </Sheet>

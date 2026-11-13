@@ -4,8 +4,12 @@ import { computeImportPlan } from '../lib/diff';
 import { normalizeContainerNumber, normalizeField, isValidFormat } from '../lib/normalize';
 import { FIELD_KEYS, FIELD_LABELS, type ContainerRecord, type ContainerFields, type ImportBatch, type SyncState } from '../lib/types';
 
+export type Role = 'viewer' | 'editor' | 'admin';
+
 export interface StoreState {
   ready: boolean;
+  /** Cloud mode: the signed-in user's role. Local mode: null (full access on own device). */
+  role: Role | null;
   mode: 'local' | 'cloud';
   sync: SyncState;
   online: boolean;
@@ -68,6 +72,7 @@ export class InventoryStore {
     this.remote = opts.remote ?? null;
     this.state = {
       ready: false,
+      role: null,
       mode: this.remote ? 'cloud' : 'local',
       sync: this.remote ? 'sync-required' : 'local-only',
       online: this.isOnline(),
@@ -120,9 +125,19 @@ export class InventoryStore {
     return [...this.index.values()];
   }
 
+  setRole(role: Role | null) {
+    this.set({ role });
+  }
+
+  /** Write access: role allows it (cloud) AND we're online (shared data never forks offline). */
   canEdit(): boolean {
     if (!this.remote) return true;
+    if (this.state.role !== 'editor' && this.state.role !== 'admin') return false;
     return this.state.online && this.state.sync !== 'offline';
+  }
+
+  isAdmin(): boolean {
+    return !this.remote || this.state.role === 'admin';
   }
 
   setOnline(online: boolean) {
@@ -204,7 +219,11 @@ export class InventoryStore {
   }
 
   private assertCanEdit() {
-    if (!this.canEdit()) throw new Error('You are offline. Editing is disabled until you reconnect, so the shared inventory never gets out of sync.');
+    if (!this.canEdit()) {
+      if (this.remote && this.state.role !== 'editor' && this.state.role !== 'admin')
+        throw new Error('Your account is view-only. Ask the admin if you need to make changes.');
+      throw new Error('You are offline. Editing is disabled until you reconnect, so the shared inventory never gets out of sync.');
+    }
   }
 
   async createRecord(input: RecordInput): Promise<ContainerRecord> {

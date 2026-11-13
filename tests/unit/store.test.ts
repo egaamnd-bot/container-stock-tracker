@@ -130,7 +130,25 @@ describe('CLOUD mode store (fake Supabase)', () => {
     for (const r of [row('AXIU1498450', 'DM'), row('MSKU1234565', 'AV')]) remote.data.set(r.container_no, { ...r, updated_at: 't0' });
     online = true;
     store = new InventoryStore({ db: freshDB(), remote, isOnline: () => online });
+    store.setRole('admin');
     await store.init();
+  });
+
+  it('viewer role: can sync and search, but every write is refused before reaching the server', async () => {
+    store.setRole('viewer');
+    await store.sync();
+    expect(searchContainer(store.index, 'AXIU1498450').kind).toBe('found');
+    expect(store.canEdit()).toBe(false);
+    expect(store.isAdmin()).toBe(false);
+    const before = remote.data.size;
+    await expect(store.updateRecord(store.index.get('AXIU1498450')!, { ...row('X'), condition: 'AV' })).rejects.toThrow(/view-only/i);
+    await expect(store.applyImport(req([row('ZZZU0000001')], 'merge'))).rejects.toThrow(/view-only/i);
+    expect(remote.data.size).toBe(before);
+  });
+
+  it('no role yet (cloud) is treated as read-only', async () => {
+    store.setRole(null);
+    expect(store.canEdit()).toBe(false);
   });
 
   it('syncs the server inventory into the offline cache', async () => {
@@ -146,6 +164,7 @@ describe('CLOUD mode store (fake Supabase)', () => {
     online = false;
     remote.down = true;
     const cold = new InventoryStore({ db: store.db, remote, isOnline: () => online });
+    cold.setRole('admin');
     await cold.init(); // app opened with no network
     expect(cold.state.sync).toBe('offline');
     expect(cold.state.lastSyncAt).not.toBeNull();
