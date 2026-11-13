@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 (2026-11-13)
+Shared inventory on Supabase.
+- Admin / viewer roles enforced in the database; viewers get search, browse, dashboard and export only.
+- Request-access sign-up + in-app **Settings → Users** approval panel for admins (no SQL needed after bootstrap).
+- New users default to viewer; admins cannot demote themselves.
+- Migration `002_roles_admin.sql`; setup guide `docs/SUPABASE_SETUP.md`.
+
 ## 1.0.0 (2026-11-13)
 Initial release.
 - Instant container search with normalization (spaces/tabs/line breaks/case/separators), ISO 6346 check-digit validation, extraction of numbers from pasted text, and labelled suggestions only when there's no exact match.
