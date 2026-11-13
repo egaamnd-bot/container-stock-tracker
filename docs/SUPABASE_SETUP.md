@@ -5,10 +5,8 @@
 ## One-time setup (done 2026-11-13)
 1. SQL Editor → ran `supabase/migrations/001_init.sql` + `002_roles_admin.sql` ✅
 2. Auth → URL Configuration → Site URL = the GitHub Pages URL ✅
-3. GitHub repo → Settings → Secrets and variables → Actions:
-   - `VITE_SUPABASE_URL` = `https://xrkbhopqyxoahusaozkc.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY` = the **publishable** key (`sb_publishable_…`). Never the `sb_secret_…` key.
-4. Push to `main` → the workflow builds with these and deploys. The app switches from local-only to shared mode.
+3. `.env.production` (committed) holds the project URL + **publishable** key (`sb_publishable_…`). It's public by design — RLS does the protecting. Never commit the `sb_secret_…` key.
+4. Push to `main` → the workflow builds and deploys. The app switches from local-only to shared mode.
 
 ## Bootstrap the first admin (once)
 Open the app → **Request access** with your email → confirm the email → then in SQL Editor:

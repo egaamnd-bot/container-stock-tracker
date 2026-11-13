@@ -30,9 +30,7 @@ jobs:
         run: npm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-          # Optional: add these as repository secrets to switch from local-only to shared Supabase mode.
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Supabase URL + publishable key come from the committed .env.production (public by design).
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
