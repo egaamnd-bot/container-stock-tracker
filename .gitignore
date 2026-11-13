@@ -1,0 +1,17 @@
+node_modules
+dist
+dev-dist
+.env
+.env.local
+.env.*.local
+test-results
+playwright-report
+coverage
+*.log
+
+# Company inventory data — never commit (repo may be public)
+tests/fixtures/*.xlsx
+tests/fixtures/*.xls
+seed/
+*.xlsx
+!tests/fixtures/.keep

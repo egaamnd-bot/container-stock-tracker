@@ -1,0 +1,15 @@
+export function Logo({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#2563eb" />
+      <rect x="12" y="20" width="40" height="26" rx="3" fill="#fff" />
+      <g stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="19" y1="25" x2="19" y2="41" />
+        <line x1="25.5" y1="25" x2="25.5" y2="41" />
+        <line x1="32" y1="25" x2="32" y2="41" />
+        <line x1="38.5" y1="25" x2="38.5" y2="41" />
+        <line x1="45" y1="25" x2="45" y2="41" />
+      </g>
+    </svg>
+  );
+}
