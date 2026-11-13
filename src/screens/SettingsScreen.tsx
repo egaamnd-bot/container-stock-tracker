@@ -9,6 +9,10 @@ import type { ImportBatch } from '../lib/types';
 import { useInstallPrompt } from '../state/install';
 import { UsersAdmin } from '../components/UsersAdmin';
 
+const APK_URL = 'https://github.com/sbsopex/container-stock-tracker/releases/download/android/container-stock-tracker.apk';
+/** True inside the Capacitor APK shell — no point offering the APK there. */
+const isNativeApp = typeof window !== 'undefined' && Boolean((window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+
 export function SettingsScreen({ userEmail, onSignOut }: { userEmail: string | null; onSignOut?: () => Promise<void> }) {
   const store = useStore();
   const state = useStoreState();
@@ -118,6 +122,16 @@ export function SettingsScreen({ userEmail, onSignOut }: { userEmail: string | n
             ))}
           </div>
         </Card>
+
+        {!isNativeApp && (
+          <Card className="p-4">
+            <h2 className="font-semibold flex items-center gap-2 mb-2"><Smartphone size={18} /> Android app (APK)</h2>
+            <p className="text-sm text-slate-500 mb-3">Download, open the file, and allow "Install unknown apps" if Android asks. Always shows the latest data, no reinstall needed for updates.</p>
+            <a href={APK_URL} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 text-white font-semibold min-h-[48px] active:bg-brand-700" data-testid="apk-download">
+              <Download size={18} /> Download APK
+            </a>
+          </Card>
+        )}
 
         {install.available && (
           <Card className="p-4">
