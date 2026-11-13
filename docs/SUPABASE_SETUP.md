@@ -33,3 +33,14 @@ Admin: Import tab → pick `Stock now.xlsx` → Replace → confirm. Viewers' ph
 - Projects pause after ~7 days with no API traffic. Daily imports + coworker use keep it awake; if it pauses, restore from the dashboard (data is kept).
 - Built-in email sender is rate-limited (a few emails/hour). For a batch onboarding either stagger sign-ups or turn off "Confirm email" (Auth → Providers → Email) — the admin approval step is the real gate.
 - DB size: ~7.4k containers + audit log is a few MB; the 500 MB cap is not a concern. Audit log grows with each Replace import (only changed rows are logged).
+
+## Automatic feed from Google Sheets (replaces daily manual import)
+```
+lazyit API ──(IT fetchDailyStock, every 6h)──▶ MASTER_DAILY_STOCK ──(pushStockToSupabase, hourly)──▶ Supabase ──▶ phones
+```
+- Script: [`apps-script/SupabaseStockPush.gs`](../apps-script/SupabaseStockPush.gs). Add it as a **new file** in the IT Daily Stock Apps Script project. IT's code is not modified, and the lazyit API is never called a second time.
+- Reads `MASTER_DAILY_STOCK`, which holds the **full** stock. The `offhire` filter in IT's script applies only to the Offhire and OB copies.
+- Pushes only when IT's script recorded a new successful snapshot (`SBS_LAST_API_SUCCESS_AT`). Effective data age is ≤ 6h + 1h.
+- Server side: migration `003_server_import.sql` lets the `service_role` (secret key) call `apply_import`, plus `inventory_count()`.
+- Guards: one-transaction replace, an 80% sudden-drop block, rows with missing fields skipped *and* protected from deletion. Every run is logged in the `SUPABASE_PUSH_LOG` tab.
+- Setup: Script Properties `SUPABASE_URL` + `SUPABASE_SECRET_KEY` → run `stockPushDiagnose()` → `pushStockToSupabase()` → `setupSupabasePushTrigger()`.

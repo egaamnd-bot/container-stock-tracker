@@ -40,6 +40,7 @@ beforeAll(async () => {
   await db.exec(readFileSync('tests/sql/auth-stub.sql', 'utf8'));
   await db.exec(readFileSync('supabase/migrations/001_init.sql', 'utf8'));
   await db.exec(readFileSync('supabase/migrations/002_roles_admin.sql', 'utf8'));
+  await db.exec(readFileSync('supabase/migrations/003_server_import.sql', 'utf8'));
   await db.exec(`insert into auth.users values ('${EDITOR}'), ('${VIEWER}'), ('${STRANGER}');
                  insert into public.authorized_users values ('${EDITOR}', 'editor'), ('${VIEWER}', 'viewer');`);
 });
@@ -198,5 +199,45 @@ describe('002: admin / viewer roles', () => {
   it('admin cannot change their own role (no self-lockout) and rejects bad roles', async () => {
     await expect(as(ADMIN, () => db.query(`select public.admin_set_role('${ADMIN}', 'viewer')`))).rejects.toThrow(/own access/);
     await expect(as(ADMIN, () => db.query(`select public.admin_set_role('${NEWBIE}', 'superuser')`))).rejects.toThrow(/Invalid role/);
+  });
+});
+
+describe('003: automated Sheet → Supabase push (service_role)', () => {
+  async function asService<T>(fn: () => Promise<T>): Promise<T> {
+    await db.exec(`set role service_role; select set_config('request.jwt.claim.role', 'service_role', false);`);
+    try { return await fn(); } finally {
+      await db.exec(`reset role; select set_config('request.jwt.claim.role', '', false);`);
+    }
+  }
+
+  it('migration 003 is re-runnable', async () => {
+    await db.exec(readFileSync('supabase/migrations/003_server_import.sql', 'utf8'));
+  });
+
+  it('service_role can replace-import; audit rows are tagged as import with no actor', async () => {
+    const b = await asService(() => importRows([row('SVCU0000001'), row('SVCU0000002', 'AV')], 'replace'));
+    expect(b.added).toBe(2);
+    expect(await count()).toBe(2);
+    const a = await db.query<{ source: string; actor: string | null }>(`select source, actor from public.audit_log where container_no='SVCU0000001' order by id desc limit 1`);
+    expect(a.rows[0]).toEqual({ source: 'import', actor: null });
+  });
+
+  it('inventory_count is callable by service_role only', async () => {
+    const r = await asService(() => db.query<{ n: string }>('select public.inventory_count() n'));
+    expect(Number(r.rows[0].n)).toBe(2);
+    await expect(as(VIEWER, () => db.query('select public.inventory_count()'))).rejects.toThrow(/permission denied/);
+    await expect(as(null, () => db.query('select public.inventory_count()'))).rejects.toThrow(/permission denied/);
+  });
+
+  it('viewer, anon and a forged role claim (without the service_role DB role) still cannot import', async () => {
+    await expect(as(VIEWER, () => importRows([row('HACK0000001')], 'merge'))).rejects.toThrow(/Not authorized/);
+    await expect(as(null, () => importRows([row('HACK0000001')], 'merge'))).rejects.toThrow(/permission denied/);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${STRANGER}', false);`);
+    try {
+      await expect(db.query(`select set_config('request.jwt.claim.role','service_role',false); select * from public.apply_import('merge', '[{"container_no":"HACK0000001","display_no":"x","shipping_line":"A","type":"B","grade":"C","size":"20","condition":"AV"}]'::jsonb, 'x')`)).rejects.toThrow();
+    } finally {
+      await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false); select set_config('request.jwt.claim.role', '', false);`);
+    }
+    expect((await db.query(`select 1 from public.containers where container_no='HACK0000001'`)).rows.length).toBe(0);
   });
 });
